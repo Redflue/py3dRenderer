@@ -1,13 +1,14 @@
 import pygame as pg
 from math import *
+from OpenGL.GL import *
 
 pg.init()
 pg.font.init()
 
-w = 800
-h = 600
+w = 1000
+h = 700
 
-screen = pg.display.set_mode((w,h))
+screen = pg.display.set_mode((w,h), pg.DOUBLEBUF)
 pg.display.set_caption("3d renderer")
 pg.display.set_icon(pg.surface.Surface((0,0)))
 
@@ -25,6 +26,11 @@ points.append(pg.Vector3(1,1,-1))   #5
 points.append(pg.Vector3(-1,-1,-1)) #6
 points.append(pg.Vector3(1,-1,-1))  #7
 points.append(pg.Vector3(-1,1,-1))  #8
+
+triangleOffset = pg.Vector3(4,0.5,-2)
+points.append(pg.Vector3(1,0,1) + triangleOffset) #9
+points.append(pg.Vector3(-1,0,1) + triangleOffset) #10
+points.append(pg.Vector3(-.5,0,-1) + triangleOffset) #11
 
 lines = []
 lines.append((1,3))
@@ -61,15 +67,36 @@ tris.append(((5,7,3),(255,0,255)))
 tris.append(((8,4,1),(255,255,0)))
 tris.append(((8,5,1),(255,255,0)))
 
+tris.append(((9,10,11), (255,200,0)))
+
 renderTris = []
 
-
+camPos = pg.Vector3(0,0,4)
 roty = 0
+rotx = 0
+
+def getUvTriangle(p1:pg.Vector2, p2:pg.Vector2, p3:pg.Vector2):
+
+    minX = min(p1.x,p2.x,p3.x)
+    minY = min(p1.y,p2.y,p3.y)
+
+    maxX = max(p1.x,p2.x,p3.x)
+    maxY = max(p1.y,p2.y,p3.y)
+
+    dx = maxX - minX
+    dy = maxY - minY
+
+    surf = pg.Surface((dx,dy), pg.SRCALPHA)
+    pixels = pg.PixelArray(surf)
+
+    #b1 = 
+    #b2 = 
+    #b3 = 
+
+    pass
 
 def getKeyDown(keyCode = 0):
     return pg.key.get_pressed()[keyCode]
-
-camPos = pg.Vector3(0,0,4)
 
 def moveLocal(point: pg.Vector3):
     return pg.Vector3(point.x - camPos.x, point.y - camPos.y, point.z - camPos.z)
@@ -84,23 +111,35 @@ def screenLocal(point: pg.Vector3) -> pg.Vector2 :
 def rotateY(point: pg.Vector3, rot=roty):
     return pg.Vector3(point.x*cos(roty) - point.z*sin(roty), point.y, point.x*sin(roty) + point.z*cos(roty))
 
-rotx = 0
 def rotateX(point: pg.Vector3, rot=rotx):
     return pg.Vector3(point.x, point.z*sin(rotx) + point.y*cos(rotx), point.z*cos(rotx) - point.y*sin(rotx))
 
+camLock = True
+pg.mouse.set_visible(not camLock)
+pg.event.set_grab(camLock)
 
 dt = 0.01
 clock = pg.time.Clock()
 mainLoop = True
 while mainLoop:
 
+    md = pg.mouse.get_rel()
+    if camLock:
+        pg.mouse.set_pos(w/2, h/2)
+
     screen.fill((230,230,230))
+    #glClearColor(1,1,1,1)
+    #glClear(GL_COLOR_BUFFER_BIT)
 
     for event in pg.event.get():
         if event.type == pg.QUIT:
             mainLoop = False
         if event.type == pg.KEYDOWN:
-            pass
+            if event.key == pg.K_TAB:
+                camLock = not camLock
+                pg.mouse.set_visible(not camLock)
+                pg.event.set_grab(camLock)
+                md = (0,0)
 
     if getKeyDown(pg.K_w):
         #camPos.z += dt * speed
@@ -127,15 +166,16 @@ while mainLoop:
         speed = 2.5
     else:
         speed = 1.2
-    if getKeyDown(pg.K_LEFT):
-        roty = (roty - (0.5*dt*speed)) % (pi*2)
-    if getKeyDown(pg.K_RIGHT):
-        roty = (roty + (0.5*dt*speed)) % (pi*2)
 
-    if getKeyDown(pg.K_DOWN):
-        rotx = (rotx - (0.5*dt*speed)) % (pi*2)
-    if getKeyDown(pg.K_UP):
-        rotx = (rotx + (0.5*dt*speed)) % (pi*2)
+    if not camLock:
+        if getKeyDown(pg.K_LEFT):
+            roty = (roty - (0.5*dt*speed)) % (pi*2)
+        if getKeyDown(pg.K_RIGHT):
+            roty = (roty + (0.5*dt*speed)) % (pi*2)
+        if getKeyDown(pg.K_DOWN):
+            rotx = (rotx - (0.5*dt*speed)) % (pi*2)
+        if getKeyDown(pg.K_UP):
+            rotx = (rotx + (0.5*dt*speed)) % (pi*2)
 
     if getKeyDown(pg.K_t):
         focalLen += 50 * dt * speed
@@ -143,6 +183,10 @@ while mainLoop:
         focalLen -= 50 * dt * speed
     if getKeyDown(pg.K_r):
         focalLen = 500
+
+    if camLock:
+        roty = (roty + (0.1*dt*md[0])) % (pi*2)
+        rotx = min(max((rotx - (0.1*dt*md[1])),-pi/2), pi/2)
 
     renderTris.clear()
     for t in tris:
@@ -196,12 +240,14 @@ while mainLoop:
     posTextSurface = font.render("x: " + str(round(camPos.x,2)) + " y: " + str(round(camPos.y,2)) + " z: " + str(round(camPos.z,2)), True, (0,0,0))
     rotTextSurface = font.render("rotY: " + str(round(degrees(roty),1)) + "° rotx: " + str(round(degrees(rotx),1)) + "°", True, (0,0,0))
     fpsTextSurface = font.render("fps: " + str(round(1/dt, 1)), True, (0,0,0))
+    camTextSurface = font.render("[TAB] Camlocked: " + ("True" if camLock else "False"), True, (0,0,0))
 
     screen.blit(fovTextSurface, (0, 0))
     screen.blit(posTextSurface, (0, 28))
     screen.blit(rotTextSurface, (0, 56))
+    screen.blit(camTextSurface, (0, 0 + 28 *3))
     screen.blit(fpsTextSurface, (0, h-28))
 
-    pg.display.update()
+    pg.display.flip()
     dt = clock.tick(60)/1000
 pg.quit()
