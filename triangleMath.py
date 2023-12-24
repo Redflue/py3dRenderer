@@ -43,6 +43,10 @@ while loop:
     w2 = (mp.y-a.y-w1*(b.y-a.y))/(c.y-a.y)
     w3 = 1-(w1+w2)
 
+    p2 = a+w1*(b-a)
+    pg.draw.line(screen, (255,0,0), a, a+w1*(b-a), 4)
+    pg.draw.line(screen, (0,0,255), p2, p2+(w2*(c-a)), 4)
+
     if w1 >= 0 and w2 >= 0 and w1+w2 <= 1:
         inTriangle = True
 
