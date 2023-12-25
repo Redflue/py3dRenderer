@@ -9,7 +9,7 @@ screen = pg.display.set_mode((w,h))
 
 texture = cps.Texture2D(500-32,500-32,cpsf.R8G8B8A8_UINT)
 
-shaderSource = open("./testShader.hlsl").read()
+shaderSource = open("./shaders/testShader.hlsl").read()
 shader = hlsl.compile(shaderSource)
 
 compute = cps.Compute(shader,uav=[texture])
