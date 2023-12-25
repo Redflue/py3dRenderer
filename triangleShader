@@ -1,4 +1,4 @@
-from ctypes import sizeof
+from enum import Enum
 import struct
 import pygame as pg
 import compushady as cps
@@ -12,73 +12,103 @@ w = 512
 h = 512
 screen = pg.display.set_mode((w,h))
 
-def isInTriangle(a,b,c,p):
-    w1 = (a.x*(c.y-a.y)+(p.y-a.y)*(c.x-a.x)-p.x*(c.y-a.y))/((b.y-a.y)*(c.x-a.x)-(b.x-a.x)*(c.y-a.y))
-    w2 = (p.y-a.y-w1*(b.y-a.y))/(c.y-a.y)
-    w3 = 1-(w1+w2)
-    return ((w1 >= 0 and w2 >= 0 and w1+w2 <= 1),(w1,w2,w3))
+class Triangle:
+    def __init__(self, p1:pg.Vector3, p2:pg.Vector3, p3:pg.Vector3, color = (255,0,0)) -> None:
+        self.p1 = p1 # X in screen space
+        self.p2 = p2 # Y in screen space
+        self.p3 = p3 # Depth of point
+        self.color = color
 
-def drawTriangle(a,b,c):
-    a = pg.Vector2(a)
-    b = pg.Vector2(b)
-    c = pg.Vector2(c)
+class TriangleBuffer:
+    def __init__(self, size:int) -> None:
+        self.pointBuffer = cps.Buffer(4*3*3*size, format=cpsf.R32_FLOAT)
+        self.colorBuffer = cps.Buffer(4*4*size, format=cpsf.R8G8B8A8_UINT)
 
-    mn = pg.Vector2(min(a.x,b.x,c.x),min(a.y,b.y,c.y))
-    mx = pg.Vector2(max(a.x,b.x,c.x),max(a.y,b.y,c.y))
+class TriangleBufferBuilder:
+    def __init__(self, triangleBuffer: TriangleBuffer, initialOffset:int=0) -> None:
+        self.triangleBuffer = triangleBuffer
 
-    dv = mx-mn
-    a-=mn
-    b-=mn
-    c-=mn
+        self.offset = initialOffset
+        self.pointBufferUpload = cps.Buffer(self.triangleBuffer.pointBuffer.size, cps.HEAP_UPLOAD)
+        self.colorBufferUpload = cps.Buffer(self.triangleBuffer.colorBuffer.size, cps.HEAP_UPLOAD)
 
-    surf = pg.Surface((dv.x,dv.y), pg.SRCALPHA)
-    surf.fill((0,0,255,50))
-    pixels:pg.PixelArray = pg.PixelArray(surf)
+    def packTriangle(self, tri:Triangle) -> None:
 
-    for x in range(int(dv.x)):
-        for y in range(int(dv.y)):
-            p = pg.Vector2(x,y)
-            result = isInTriangle(a,b,c,p)
-            if result[0]:
-                pixels[x,y] = (result[1][0]*255,result[1][1]*255,result[1][2]*255)
+        pointOffset = self.offset*4*3*3
+        colorOffset = self.offset*4*4
 
-    pixels.close()
+        #point 1
+        self.pointBufferUpload.upload(struct.pack("f", tri.p1.x), pointOffset + (0*4))
+        self.pointBufferUpload.upload(struct.pack("f", tri.p1.y), pointOffset + (1*4))
+        self.pointBufferUpload.upload(struct.pack("f", tri.p1.z), pointOffset + (2*4))
 
-    screen.blit(surf, mn)
-    #pg.draw.lines(screen,(100,0,0), True, [a+mn,b+mn,c+mn], 2)
+        #point 2
+        self.pointBufferUpload.upload(struct.pack("f", tri.p2.x), pointOffset + (3*4))
+        self.pointBufferUpload.upload(struct.pack("f", tri.p2.y), pointOffset + (4*4))
+        self.pointBufferUpload.upload(struct.pack("f", tri.p2.z), pointOffset + (5*4))
 
-def addPointToBuffer(buffer:cps.Buffer,p:pg.Vector2):
-    print(buffer.size)
-    buffer.upload(struct.pack("f",p.x))
-    buffer.upload(struct.pack("f",p.y),4)
-    return buffer
+        #point 3
+        self.pointBufferUpload.upload(struct.pack("f", tri.p3.x), pointOffset + (6*4))
+        self.pointBufferUpload.upload(struct.pack("f", tri.p3.y), pointOffset + (7*4))
+        self.pointBufferUpload.upload(struct.pack("f", tri.p3.z), pointOffset + (8*4))
 
-shaderSource = open("./shaders/singleTriangle.hlsl").read()
+        #color
+        self.colorBufferUpload.upload(struct.pack("I", tri.color[0]), colorOffset + (0*4))
+        self.colorBufferUpload.upload(struct.pack("I", tri.color[1]), colorOffset + (1*4))
+        self.colorBufferUpload.upload(struct.pack("I", tri.color[2]), colorOffset + (2*4))
+        self.colorBufferUpload.upload(struct.pack("I", 255), colorOffset + (3*4))
+
+        self.offset += 1
+
+    def finalizeBuild(self) -> None:
+        self.pointBufferUpload.copy_to(self.triangleBuffer.pointBuffer)
+        self.colorBufferUpload.copy_to(self.triangleBuffer.colorBuffer)
+
+triBuf = TriangleBuffer(2)
+triBufBuilder = TriangleBufferBuilder(triBuf)
+
+tri = Triangle(
+    pg.Vector3(50,50,50),
+    pg.Vector3(400,100,60),
+    pg.Vector3(200,460,30),
+    (255,0,0)
+)
+tri2 = Triangle(
+    pg.Vector3(150,50,50),
+    pg.Vector3(460,230,60),
+    pg.Vector3(60,350,30),
+    (0,255,0)
+)
+triBufBuilder.packTriangle(tri)
+triBufBuilder.packTriangle(tri2)
+triBufBuilder.finalizeBuild()
+
+shaderSource = open("./shaders/renderTriangleBuffer.hlsl").read()
+depthBufferClearShaderSource = open("./shaders/clearDepthBuffer.hlsl").read()
+
 shader = hlsl.compile(shaderSource)
+depthBufferClearShader = hlsl.compile(depthBufferClearShaderSource)
 
 colorMap = cps.Texture2D(w,h,cpsf.R8G8B8A8_UINT)
 depthMap = cps.Texture2D(w,h,cpsf.R32_FLOAT)
-bufferUpload = cps.Buffer(2*4*1,cps.HEAP_UPLOAD)
-pointBuffer = cps.Buffer(bufferUpload.size, format=cpsf.R32_FLOAT)
 
-bufferUpload = addPointToBuffer(bufferUpload, pg.Vector2(50,50))
+# Initialise/Clear Depth Buffer
+clearDepthBufferCompute = cps.Compute(depthBufferClearShader, uav=[depthMap])
+clearDepthBufferCompute.dispatch(depthMap.width//8, depthMap.height//8, 1)
 
-bufferUpload.copy_to(pointBuffer)
-
-compute = cps.Compute(shader, srv=[pointBuffer],uav=[colorMap])
+# Compute shader
+compute = cps.Compute(shader, srv=[triBuf.pointBuffer, triBuf.colorBuffer], uav=[colorMap, depthMap])
 compute.dispatch(colorMap.width//8,colorMap.height//8,1)
-#compute.dispatch(64,64,1)
-
-screen.fill((0,0,0))
 
 readBuffer = cps.Buffer(colorMap.size, cps.HEAP_READBACK)
-colorMap.copy_to(readBuffer)
-#surf = pg.image.frombuffer(readBuffer.readback2d(0,colorMap.width,colorMap.height,4),(colorMap.width,colorMap.height),"RGBA")
-surf = pg.image.frombuffer(readBuffer.readback(), (colorMap.width, colorMap.height), "RGBA")
-#image = Image.frombuffer('RGBA', (colorMap.width, colorMap.height), readBuffer.readback())
-#image.show()
-#surf = pg.Surface((32,32))
+depthReadBuffer = cps.Buffer(depthMap.size, cps.HEAP_READBACK)
 
+colorMap.copy_to(readBuffer)
+depthMap.copy_to(depthReadBuffer)
+
+surf = pg.image.frombuffer(readBuffer.readback(), (colorMap.width, colorMap.height), "RGBA")
+
+screen.fill((0,0,0))
 screen.blit(surf, (0,0))
 
 loop = True
@@ -90,8 +120,6 @@ while loop:
         if ev.type == pg.KEYDOWN:
             if ev.key == pg.K_ESCAPE:
                 loop = False
-
-    
 
     pg.display.update()
 
