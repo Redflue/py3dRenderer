@@ -2,14 +2,6 @@ import struct
 import pygame as pg
 import compushady as cps
 import compushady.formats as cpsf
-from compushady.shaders import hlsl
-#from PIL import Image
-
-pg.init()
-
-w = 512
-h = 512
-screen = pg.display.set_mode((w,h))
 
 class Triangle:
     def __init__(self, p1:pg.Vector3, p2:pg.Vector3, p3:pg.Vector3, color = (255,0,0)) -> None:
@@ -62,64 +54,3 @@ class TriangleBufferBuilder:
     def finalizeBuild(self) -> None:
         self.pointBufferUpload.copy_to(self.triangleBuffer.pointBuffer)
         self.colorBufferUpload.copy_to(self.triangleBuffer.colorBuffer)
-
-triBuf = TriangleBuffer(2)
-triBufBuilder = TriangleBufferBuilder(triBuf)
-
-tri = Triangle(
-    pg.Vector3(50,50,50),
-    pg.Vector3(400,100,60),
-    pg.Vector3(200,460,30),
-    (255,0,0)
-)
-tri2 = Triangle(
-    pg.Vector3(150,50,50),
-    pg.Vector3(460,230,60),
-    pg.Vector3(60,350,30),
-    (0,255,0)
-)
-triBufBuilder.packTriangle(tri)
-triBufBuilder.packTriangle(tri2)
-triBufBuilder.finalizeBuild()
-
-shaderSource = open("./shaders/renderTriangleBuffer.hlsl").read()
-depthBufferClearShaderSource = open("./shaders/clearDepthBuffer.hlsl").read()
-
-shader = hlsl.compile(shaderSource)
-depthBufferClearShader = hlsl.compile(depthBufferClearShaderSource)
-
-colorMap = cps.Texture2D(w,h,cpsf.R8G8B8A8_UINT)
-depthMap = cps.Texture2D(w,h,cpsf.R32_FLOAT)
-
-# Initialise/Clear Depth Buffer
-clearDepthBufferCompute = cps.Compute(depthBufferClearShader, uav=[depthMap])
-clearDepthBufferCompute.dispatch(depthMap.width//8, depthMap.height//8, 1)
-
-# Compute shader
-compute = cps.Compute(shader, srv=[triBuf.pointBuffer, triBuf.colorBuffer], uav=[colorMap, depthMap])
-compute.dispatch(colorMap.width//8,colorMap.height//8,1)
-
-readBuffer = cps.Buffer(colorMap.size, cps.HEAP_READBACK)
-depthReadBuffer = cps.Buffer(depthMap.size, cps.HEAP_READBACK)
-
-colorMap.copy_to(readBuffer)
-depthMap.copy_to(depthReadBuffer)
-
-surf = pg.image.frombuffer(readBuffer.readback(), (colorMap.width, colorMap.height), "RGBA")
-
-screen.fill((0,0,0))
-screen.blit(surf, (0,0))
-
-loop = True
-while loop:
-    
-    for ev in pg.event.get():
-        if ev.type == pg.QUIT:
-            loop = False
-        if ev.type == pg.KEYDOWN:
-            if ev.key == pg.K_ESCAPE:
-                loop = False
-
-    pg.display.update()
-
-pg.quit()
