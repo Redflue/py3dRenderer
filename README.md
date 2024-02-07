@@ -19,12 +19,11 @@ This project was made for educational purposes; I wanted to learn about 3d rende
 
 ## Dependencies
 The project was made using:
-- ```python 3.10``` or higher (as long as its compactible)
+- ```python 3.10``` or higher (as long as its compatible)
 - ```pygame 2.5.2``` or higher (as long as its also compatible)
 - ```compushady``` (for compute shaders)
 
 ## Requirements
 Because of the nature of python and because of how **compushady** works, there are some harware and software requirements.
-- A good computer, otherwise the fps will drop
-- A discrete GPU, this is a requirement for compushady.
-- Vulkan drivers, once again, a compushady requirement
+- A Windows computer, linux hasn't been tested
+- Graphics drivers
